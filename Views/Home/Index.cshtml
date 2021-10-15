@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Desenho com sockets e RabbitMQ</title>
+</head>
+<body>
+    <div id="info">
+        <div><span>Conectar a sala:</span><span><input id="sala" type="text"></span><button type="button"
+                id="conectar">Conectar</button></div>
+        <div>
+            <button type="button" id="criar">Criar Sala</button>
+        </div>
+    </div>
+</body>
+
+</html>
+<script>
+    let desenho =
+    {
+        podedesenhar: false,
+        posicao_mouse: {},
+        conexao: {},
+        context: {},
+        canvas: {},
+        iniciar: () => {
+            let criar = document.getElementById("criar");
+            let conectar = document.getElementById("conectar");
+            criar.onclick = desenho.gerarNovaConexao
+            conectar.onclick = desenho.gerarConexaoVinculo;
+        },
+        gerarNovaConexao: () => {
+            desenho.gerarConexao();
+        },
+        gerarConexaoVinculo: () => {
+            let salaId = document.getElementById("sala").value;
+            desenho.gerarConexao(salaId);
+        },
+        gerarConexao: (id) => {
+            url = "ws://localhost:5000/ws";
+            param = id ? `?con=${id}` : "";
+            url += param;
+            desenho.conexao = new WebSocket(url);
+            desenho.conexao.onmessage = desenho.onmessage;
+            desenho.conexao.onclose = (e)=>{
+                alert(e.reason);
+                window.location.reload();
+            }
+            desenho.gerarCanvas();
+        },
+        gerarCanvas: () => {
+            let canvas = document.createElement("canvas");
+            canvas.style.border = "thin black solid";
+            desenho.canvas = canvas;
+            canvas.width = 600;
+            canvas.height = 500;
+            desenho.context = canvas.getContext("2d");
+            document.getElementById("info").innerHTML = "";
+            document.body.appendChild(canvas);
+            document.addEventListener("mouseup", (e) => { desenho.podedesenhar = false; });
+            document.addEventListener("mousedown", (e) => {
+                desenho.podedesenhar = true;
+                desenho.posicao_mouse = desenho.posicaomouse(e)
+            });
+            canvas.addEventListener("mousemove", desenho.desenharmouse);
+        },
+        desenharmouse: (e) => {
+            if (!desenho.podedesenhar) return;
+            let mousepos = desenho.posicaomouse(e)
+            let from = desenho.posicao_mouse;
+            let to = mousepos
+            desenho.desenhar(from, to);
+            desenho.enviardesenho(from, to);
+            desenho.posicao_mouse = mousepos
+        },
+        desenhar: (from, to) => {
+            let context = desenho.context;
+            context.moveTo(from.x, from.y);
+            context.lineTo(to.x, to.y);
+            context.stroke();
+        },
+        enviardesenho: (from, to) => {
+            let action = { action: "desenhar", from: from, to: to };
+            desenho.conexao.send(JSON.stringify(action));
+        },
+        parardesenhar: (e) => {
+            e.target.onmousemove = null;
+        },
+        posicaomouse: (e) => {
+            let rect = desenho.canvas.getBoundingClientRect();
+            return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        },
+        onmessage: (event) => {
+            let msg = JSON.parse(event.data);
+            if (msg.action == "desenhar") {
+                desenho.desenhar(msg.from, msg.to);
+            } else if (msg.action == "drawcache") {
+                msg.data = JSON.parse(msg.data);
+                msg.data.forEach((msg) => {
+                    desenho.desenhar(msg.from, msg.to);
+                })
+            }else if (msg.action == "serverid") {
+                 document.getElementById("info").innerHTML = `Compartilhe o ID (${msg.data}) da sala para outras pessoas se unirem`;
+            }
+        }
+    }
+    desenho.iniciar();
+</script>
